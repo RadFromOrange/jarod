@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Paths to cgroup memory files
+MEMORY_USAGE_FILE="/sys/fs/cgroup/memory/memory.usage_in_bytes"
+MEMORY_LIMIT_FILE="/sys/fs/cgroup/memory/memory.limit_in_bytes"
+WORKING_SET_FILE="/sys/fs/cgroup/memory/memory.stat"
+
+# Function to extract working set memory (active anon + active file)
+get_working_set_memory() {
+    active_anon=$(grep 'active_anon' $WORKING_SET_FILE | awk '{print $2}')
+    active_file=$(grep 'active_file' $WORKING_SET_FILE | awk '{print $2}')
+    echo $((active_anon + active_file))
+}
+
+# Function to get total memory usage
+get_total_memory_usage() {
+    cat $MEMORY_USAGE_FILE
+}
+
+# Function to get memory limit
+get_memory_limit() {
+    cat $MEMORY_LIMIT_FILE
+}
+
+# Convert bytes to megabytes for easier reading
+bytes_to_mb() {
+    echo $(( $1 / 1024 / 1024 ))
+}
+
+# Calculate percentage (using integer arithmetic)
+calculate_percentage() {
+    # Scale up values to avoid floating-point, we multiply by 100 to get the percentage
+    echo $(( ($1 * 100) / $2 ))
+}
+
+# Main
+working_set_memory=$(get_working_set_memory)
+total_memory_usage=$(get_total_memory_usage)
+memory_limit=$(get_memory_limit)
+
+# Calculate percentages (no floating-point, integer math)
+working_set_percentage=$(calculate_percentage $working_set_memory $memory_limit)
+total_memory_percentage=$(calculate_percentage $total_memory_usage $memory_limit)
+
+# Convert values to MB for display
+working_set_mb=$(bytes_to_mb $working_set_memory)
+total_memory_mb=$(bytes_to_mb $total_memory_usage)
+memory_limit_mb=$(bytes_to_mb $memory_limit)
+
+# Display the results
+echo "Memory Limit: ${memory_limit_mb} MB"
+echo "Working Set Memory: ${working_set_mb} MB (${working_set_percentage}% of limit)"
+echo "Total Memory Usage: ${total_memory_mb} MB (${total_memory_percentage}% of limit)"
+
+# Set thresholds for alerting (e.g., 85% for working set, 95% for total)
+WORKING_SET_THRESHOLD=85
+TOTAL_MEMORY_THRESHOLD=95
+
+# Alerting logic (integer comparison)
+if [ "$working_set_percentage" -gt "$WORKING_SET_THRESHOLD" ]; then
+    echo "Warning: Working set memory exceeds ${WORKING_SET_THRESHOLD}% of the limit!"
+fi
+
+if [ "$total_memory_percentage" -gt "$TOTAL_MEMORY_THRESHOLD" ]; then
+    echo "Warning: Total memory usage exceeds ${TOTAL_MEMORY_THRESHOLD}% of the limit!"
+fi
